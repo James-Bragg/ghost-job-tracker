@@ -1,7 +1,7 @@
 # Ghost Job Tracker
 
-Runs headless on a Raspberry Pi. Three times a day it pulls UK job postings from Reed and
-Adzuna, keeps only the ones **relevant to you**, gives each a 0–100 **ghost score** (how
+Runs headless on a Raspberry Pi. Three times a day it pulls UK job postings from Reed
+(Adzuna is supported too, switched off by default), keeps only the ones **relevant to you**, gives each a 0–100 **ghost score** (how
 likely it is that the advert isn't a real, open role), and pushes the genuine-looking ones to
 your phone.
 
@@ -10,7 +10,7 @@ your phone.
 ```bash
 # install uv: https://docs.astral.sh/uv/
 uv sync
-cp .env.example .env    # then add your Adzuna and/or Reed API keys + NTFY_TOPIC
+cp .env.example .env    # then add REED_API_KEY + NTFY_TOPIC
 ```
 
 ## Try it without API keys
@@ -25,13 +25,16 @@ uv run ghostjobs demo --notify             # also push the genuine ones to your 
 
 Demo data lives in its own `demo.db`, so it never mixes with your real data.
 
-## Getting API keys (both free)
+## Job boards
 
-- **Reed** - sign up at reed.co.uk/developers/jobseeker; the key arrives by email.
-- **Adzuna** - register at developer.adzuna.com for an `app_id` + `app_key`.
-  The free tier is roughly 1,000 calls a month, which the default schedule stays inside.
+| Board  | Cost | Status | Setup |
+|--------|------|--------|-------|
+| Reed   | Free | **On** by default | Get a key at reed.co.uk/developers/jobseeker (emailed), set `REED_API_KEY` |
+| Adzuna | Free account = 25 test calls only; full access is a paid plan (£8/month at time of writing) | Off by default | Set `ADZUNA_APP_ID` + `ADZUNA_APP_KEY`, then `SOURCES=reed,adzuna` |
 
-You only need one to start. Put them in `.env`.
+`uv run ghostjobs status` shows which boards are ready. If one board fails during a run
+(down, bad key, quota used up) it's logged and skipped - the others still get through and
+you still get notified.
 
 ## Only jobs relevant to you
 
@@ -88,14 +91,15 @@ Works on any Pi running 64-bit Raspberry Pi OS (Pi 3B+ or newer). No screen need
 ```bash
 git clone <your repo> ~/ghost-job-tracker   # or copy the folder over
 cd ~/ghost-job-tracker
-./deploy/pi/install.sh               # first time: creates .env, then stops
-nano .env                            # add API keys + NTFY_TOPIC
-./deploy/pi/install.sh               # installs, does a test run, schedules it
+bash deploy/pi/install.sh            # first time: creates .env, then stops
+nano .env                            # add NTFY_TOPIC (+ REED_API_KEY when you have it)
+bash deploy/pi/install.sh            # installs, does a test run, schedules it
 ```
 
 This installs [uv](https://docs.astral.sh/uv/) (which fetches Python 3.12 — Pi OS ships an
 older one), does a test run, then sets up a systemd timer that runs at 08:00, 13:00 and 18:00
-(keeps Adzuna inside its free monthly limit). If the Pi was off, it catches up on boot.
+If the Pi was off, it catches up on boot. You can install before your Reed key arrives -
+runs just log a warning until you add it to `.env`.
 
 ```bash
 systemctl list-timers ghostjobs.timer     # when's the next run
@@ -142,6 +146,7 @@ uv run ghostjobs check "<job title>"
 uv run ghostjobs label <id> ghosted|responded|rejected
 uv run ghostjobs calibrate [--apply]
 uv run ghostjobs notify-test
+uv run ghostjobs status               # boards, notifications, how many jobs stored
 uv run pytest
 ```
 

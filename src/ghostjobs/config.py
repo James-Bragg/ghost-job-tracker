@@ -6,9 +6,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    # Which job boards to use, comma-separated: "reed", "adzuna" or "reed,adzuna".
+    # A board also needs its key(s) below. Adzuna is off by default: its free tier is only
+    # 25 test calls; full access is a paid plan.
+    sources: str = "reed"
+
+    reed_api_key: str = ""
     adzuna_app_id: str = ""
     adzuna_app_key: str = ""
-    reed_api_key: str = ""
 
     database_url: str = "sqlite:///ghostjobs.db"
     default_keywords: str = "junior developer"
@@ -34,6 +39,9 @@ class Settings(BaseSettings):
     notify_max_score: float = 30  # notify when ghost score is at or below this
     notify_require_salary: bool = False
     notify_max_per_run: int = 5  # anything beyond this is sent as one summary
+
+    def source_list(self) -> list[str]:
+        return [s.strip().lower() for s in self.sources.split(",") if s.strip()]
 
     def search_list(self) -> list[str]:
         items = [s.strip() for s in self.searches.split(";") if s.strip()]

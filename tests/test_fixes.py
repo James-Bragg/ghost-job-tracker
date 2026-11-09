@@ -172,3 +172,47 @@ def test_irrelevant_titles_skip_the_details_call():
     with get_session(engine) as s:
         fetch_and_store(s, "dev", "Corby", fetchers=[fetcher])
     assert calls == ["/api/1.0/search"]
+
+
+def test_one_board_failing_doesnt_stop_the_others():
+    def broken(req):
+        return httpx.Response(429)
+
+    def ok(req):
+        if req.url.path.endswith("/search"):
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "jobId": 9,
+                            "jobTitle": "Senior Developer",
+                            "employerName": "Acme",
+                            "date": "01/11/2026",
+                            "jobDescription": "snippet",
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(404)
+
+    adz = AdzunaFetcher(client=httpx.Client(transport=httpx.MockTransport(broken)))
+    reed = ReedFetcher(client=httpx.Client(transport=httpx.MockTransport(ok)))
+    engine = create_engine("sqlite://")
+    init_db(engine)
+    with get_session(engine) as s:
+        assert fetch_and_store(s, "dev", "Corby", fetchers=[adz, reed]) == 1
+
+
+def test_sources_setting_controls_boards(monkeypatch):
+    from ghostjobs import pipeline
+    from ghostjobs.config import get_settings
+
+    s = get_settings()
+    monkeypatch.setattr(s, "reed_api_key", "r")
+    monkeypatch.setattr(s, "adzuna_app_id", "a")
+    monkeypatch.setattr(s, "adzuna_app_key", "b")
+    monkeypatch.setattr(s, "sources", "reed")
+    assert [f.name for f in pipeline.available_fetchers()] == ["reed"]
+    monkeypatch.setattr(s, "sources", "reed,adzuna")
+    assert [f.name for f in pipeline.available_fetchers()] == ["reed", "adzuna"]

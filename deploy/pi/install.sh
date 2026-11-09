@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install Ghost Job Tracker as a scheduled service on a Raspberry Pi (or any systemd Linux).
 #
-#   ./deploy/pi/install.sh
+#   bash deploy/pi/install.sh
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -24,13 +24,16 @@ echo "==> Installing dependencies"
 if [[ ! -f .env ]]; then
     cp .env.example .env
     echo
-    echo "!! Created .env - add your API keys and NTFY_TOPIC, then re-run this script."
+    echo "!! Created .env - add NTFY_TOPIC (and REED_API_KEY if you have it),"
+    echo "   then re-run this script. You can add the Reed key later."
     exit 1
 fi
 
-# 4. Sanity check: one run now, so problems show up here not in the logs
+# 4. Sanity check: one run now, so problems show up here not in the logs.
+#    Without an API key yet this just warns - the schedule still gets installed.
 echo "==> Test run"
 "$UV" run --no-sync ghostjobs run
+"$UV" run --no-sync ghostjobs status
 
 # 5. systemd units
 echo "==> Installing systemd units"

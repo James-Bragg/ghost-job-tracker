@@ -55,6 +55,7 @@ def main() -> None:
     cal.add_argument("--apply", action="store_true", help="Save to weights.json and rescore")
 
     sub.add_parser("notify-test", help="Send a test notification to your phone")
+    sub.add_parser("status", help="Show what's set up and what's stored")
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -72,9 +73,15 @@ def main() -> None:
 
     with get_session() as session:
         if args.cmd in ("run", "fetch") and not available_fetchers():
-            parser.error(
-                "No API keys set. Add them to .env - or try `ghostjobs demo` in the meantime."
+            msg = (
+                f"No job boards ready (SOURCES={s.sources!r}). Add REED_API_KEY to .env - "
+                "or try `ghostjobs demo` in the meantime."
             )
+            if args.cmd == "fetch":
+                parser.error(msg)
+            # Scheduled run before keys exist: warn and exit cleanly rather than fail.
+            logging.warning(msg)
+            return
 
         if args.cmd == "run":
             result = run_all(session, args.location, args.pages)
@@ -159,6 +166,38 @@ def main() -> None:
                 print(f"\nSaved to {s.weights_path} and rescored everything.")
             else:
                 print("\nRun with --apply to use these weights.")
+
+        elif args.cmd == "status":
+            from ghostjobs.pipeline import ALL_FETCHERS
+
+            enabled = s.source_list()
+            print("Job boards:")
+            for name, cls in ALL_FETCHERS.items():
+                on = name in enabled
+                keys = cls().is_configured()
+                state = (
+                    "ready"
+                    if on and keys
+                    else "ON but API key missing in .env"
+                    if on
+                    else "off (key set, add to SOURCES to use)"
+                    if keys
+                    else "off"
+                )
+                print(f"  {name:<8} {state}")
+            print(f"Notifications: {'ntfy topic set' if s.ntfy_topic else 'NTFY_TOPIC not set'}")
+            print(
+                f"Searches:      {'; '.join(s.search_list())}  "
+                f"(within {s.search_radius_miles} miles of {s.default_location})"
+            )
+            rows = list(session.exec(select(Posting)).all())
+            open_ = [p for p in rows if is_active(p)]
+            print(
+                f"Stored jobs:   {len(rows)} total, {len(open_)} still open, "
+                f"{sum(p.relevant for p in open_)} relevant to you"
+            )
+            if rows:
+                print(f"Last fetch:    {max(p.last_seen for p in rows):%d %b %Y %H:%M} UTC")
 
         elif args.cmd == "notify-test":
             n = Notifier()

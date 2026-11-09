@@ -16,8 +16,23 @@ from ghostjobs.signals import compute_signals
 log = logging.getLogger(__name__)
 
 
+ALL_FETCHERS = {"reed": ReedFetcher, "adzuna": AdzunaFetcher}
+
+
 def available_fetchers() -> list[Fetcher]:
-    return [f for f in (AdzunaFetcher(), ReedFetcher()) if f.is_configured()]
+    """Boards that are both switched on in SOURCES and have their keys set."""
+    out = []
+    for name in get_settings().source_list():
+        cls = ALL_FETCHERS.get(name)
+        if cls is None:
+            log.warning("Unknown source %r in SOURCES (options: %s)", name, ", ".join(ALL_FETCHERS))
+            continue
+        fetcher = cls()
+        if fetcher.is_configured():
+            out.append(fetcher)
+        else:
+            log.warning("%s is in SOURCES but its API key isn't set in .env - skipping", name)
+    return out
 
 
 def upsert(session: Session, raw: RawPosting) -> tuple[Posting, bool]:
@@ -51,7 +66,19 @@ def fetch_and_store(
     )
     count = 0
     for fetcher in fetchers if fetchers is not None else available_fetchers():
-        for raw in fetcher.search(keywords, location, pages):
+        try:
+            results = fetcher.search(keywords, location, pages)
+        except httpx.HTTPError as e:
+            # One board being down / out of quota shouldn't lose the others' results.
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            hint = {
+                401: " (check the API key)",
+                403: " (check the API key)",
+                429: " (rate limit / quota used up)",
+            }.get(status, "")
+            log.warning("%s search for %r failed: %s%s", fetcher.name, keywords, e, hint)
+            continue
+        for raw in results:
             p, is_new = upsert(session, raw)
             count += 1
             # Snippet-only boards: grab the full advert once - only for new jobs whose
