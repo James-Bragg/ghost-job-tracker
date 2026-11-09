@@ -4,12 +4,16 @@ Install the ntfy app (Android / iOS), subscribe to your topic, done.
 """
 
 import json
+import logging
+import time
 
 import httpx
 from sqlmodel import Session, select
 
 from ghostjobs.config import Settings, get_settings
 from ghostjobs.db import Posting, is_active
+
+log = logging.getLogger(__name__)
 
 
 class Notifier:
@@ -82,39 +86,58 @@ def candidates(session: Session, settings: Settings | None = None) -> list[Posti
     return unique
 
 
+def _job_body(p: Posting) -> str:
+    reasons = json.loads(p.reasons or "[]")
+    body = f"{p.company} · {p.location}\n{_salary(p)}\nGhost score {p.ghost_score:.0f}/100 · #{p.id}"
+    if reasons:
+        body += f"\nNote: {reasons[0]}"
+    return body
+
+
 def notify_genuine(session: Session, notifier: Notifier | None = None) -> int:
-    """Send a push for each new genuine-looking posting. Returns how many were covered."""
+    """NOTIFY_MAX_PER_RUN=0 sends every job as its own alert. Jobs are marked sent only
+    after their alert goes through, so a rate limit part-way just defers the rest."""
     notifier = notifier or Notifier()
     if not notifier.enabled:
         return 0
     rows = candidates(session, notifier.s)
     if not rows:
+        session.commit()
         return 0
 
     limit = notifier.s.notify_max_per_run
-    for p in rows[:limit]:
-        reasons = json.loads(p.reasons or "[]")
-        body = (
-            f"{p.company} · {p.location}\n{_salary(p)}\n"
-            f"Ghost score {p.ghost_score:.0f}/100 · #{p.id}"
-        )
-        if reasons:
-            body += f"\nNote: {reasons[0]}"
-        notifier.send(title=p.title, message=body, click=p.url, tags="white_check_mark")
+    individual = rows if limit <= 0 else rows[:limit]
+    extra = [] if limit <= 0 else rows[limit:]
+    delay = notifier.s.notify_delay_seconds
+    covered = 0
 
-    extra = rows[limit:]
+    for i, p in enumerate(individual):
+        if i and delay:
+            time.sleep(delay)
+        try:
+            notifier.send(title=p.title, message=_job_body(p), click=p.url, tags="white_check_mark")
+        except httpx.HTTPError as e:
+            log.warning("Stopped after %d alerts - ntfy refused: %s. The rest go next run.", covered, e)
+            session.commit()
+            return covered
+        p.notified = True
+        session.add(p)
+        session.commit()
+        covered += 1
+
     if extra:
         lines = "\n".join(f"• #{p.id} {p.title} @ {p.company}" for p in extra[:15])
         more = f"\n…and {len(extra) - 15} more" if len(extra) > 15 else ""
-        notifier.send(
-            title=f"{len(extra)} more genuine-looking jobs",
-            message=lines + more,
-            tags="clipboard",
-            priority="low",
-        )
+        try:
+            notifier.send(title=f"{len(extra)} more genuine-looking jobs",
+                          message=lines + more, tags="clipboard", priority="low")
+        except httpx.HTTPError as e:
+            log.warning("Summary alert failed: %s. Those jobs go next run.", e)
+            return covered
+        for p in extra:
+            p.notified = True
+            session.add(p)
+        session.commit()
+        covered += len(extra)
 
-    for p in rows:
-        p.notified = True
-        session.add(p)
-    session.commit()
-    return len(rows)
+    return covered

@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     notify_max_score: float = 30  # notify when ghost score is at or below this
     notify_require_salary: bool = False
     notify_max_per_run: int = 5  # anything beyond this is sent as one summary
+    notify_delay_seconds: float = 1.0  # pause between alerts (ntfy.sh rate-limits bursts)
 
     def source_list(self) -> list[str]:
         return [s.strip().lower() for s in self.sources.split(",") if s.strip()]
