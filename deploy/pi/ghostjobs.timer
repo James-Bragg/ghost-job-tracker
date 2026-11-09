@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Ghost Job Tracker three times a day
+
+[Timer]
+# 08:00, 13:00, 18:00 - keeps Adzuna inside its free tier, and no 3am buzzes.
+OnCalendar=*-*-* 08,13,18:00:00
+RandomizedDelaySec=10m
+# If the Pi was off at a scheduled time, run once when it boots.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,48 @@
+# What counts as a job worth telling you about.
+# Edit this on the Pi with:  nano relevance.toml
+# Check your changes with:   uv run ghostjobs check "Senior Python Developer"
+# Everything is case-insensitive and matches whole words/phrases.
+
+# The job title must contain at least one of these.
+title_include = [
+    # development
+    "developer", "software", "programmer", "web", "front end", "frontend", "back end",
+    "backend", "full stack", "python", "java", "javascript", "c#", ".net", "php",
+    # support / infrastructure
+    "it support", "it technician", "service desk", "help desk", "helpdesk", "desktop support",
+    "technical support", "application support", "1st line", "2nd line", "first line",
+    "second line", "systems administrator", "sysadmin", "infrastructure", "network",
+    "cloud", "devops",
+    # data
+    "data analyst", "data engineer", "bi analyst", "business intelligence", "reporting analyst",
+    "sql", "database",
+    # testing / security
+    "qa", "tester", "test analyst", "test engineer", "cyber", "security analyst", "soc analyst",
+    # general tech ("junior"/"graduate" alone would let in Junior Accountant etc.)
+    "it", "technology", "tech", "technical analyst", "it analyst", "computer science",
+]
+
+# ...and none of these.
+title_exclude = [
+    # too senior
+    "senior", "snr", "sr", "lead", "principal", "head of", "manager", "director", "architect",
+    "staff engineer", "chief", "mid level", "mid-level", "experienced",
+    # tech-sounding but not tech
+    "sales", "recruiter", "recruitment consultant", "teacher", "lecturer", "tutor", "nurse",
+    "mechanical", "electrical", "maintenance", "field service", "hvac", "mortgage",
+    "financial analyst", "credit", "buyer", "driver", "warehouse", "chef",
+    "marketing", "accountant", "accounts", "payroll", "hr", "estate agent",
+]
+
+# Skip adverts whose description asks for at least this many years of experience
+# (e.g. "3+ years' commercial experience"). Set to 0 to turn off.
+max_years_experience = 3
+
+# Skip adverts whose description contains any of these.
+description_exclude = [
+    "dv cleared", "dv clearance", "active sc clearance", "must hold sc", "sc cleared",
+]
+
+# Minimum yearly salary in £. Adverts with no salary (or only Adzuna's estimate) are kept.
+# Set to 0 to turn off.
+min_salary = 0

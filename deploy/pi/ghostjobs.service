@@ -1,0 +1,11 @@
+[Unit]
+Description=Ghost Job Tracker - fetch, score and notify
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__DIR__
+ExecStart=__UV__ run --no-sync ghostjobs run
+Nice=10
