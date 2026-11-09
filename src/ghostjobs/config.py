@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     default_keywords: str = "junior developer"
     default_location: str = "Corby"
     search_radius_miles: int = 20
+    # Result pages per search (Reed: 100 jobs/page). Raise this for a wide radius, otherwise
+    # jobs past page 1 are missed and can wrongly look "taken down".
+    pages: int = 1
 
     # An advert not seen by any fetch for this many days is treated as taken down.
     stale_after_days: int = 3

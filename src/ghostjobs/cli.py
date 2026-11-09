@@ -22,7 +22,7 @@ def main() -> None:
 
     r = sub.add_parser("run", help="Scheduled job: all saved searches -> score -> notify")
     r.add_argument("-l", "--location", default=s.default_location)
-    r.add_argument("-p", "--pages", type=int, default=1)
+    r.add_argument("-p", "--pages", type=int, default=s.pages)
 
     d = sub.add_parser("demo", help="Fill demo.db with fake jobs (no API keys needed)")
     d.add_argument("--notify", action="store_true", help="Also push the genuine ones to your phone")
@@ -30,7 +30,7 @@ def main() -> None:
     f = sub.add_parser("fetch", help="Pull one search from the job boards")
     f.add_argument("-k", "--keywords", default=s.default_keywords)
     f.add_argument("-l", "--location", default=s.default_location)
-    f.add_argument("-p", "--pages", type=int, default=1)
+    f.add_argument("-p", "--pages", type=int, default=s.pages)
 
     sub.add_parser("score", help="Recompute ghost scores for every stored posting")
 
