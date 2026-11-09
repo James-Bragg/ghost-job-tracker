@@ -41,8 +41,14 @@ class Settings(BaseSettings):
     ntfy_token: str = ""  # only needed for a protected/self-hosted topic
     notify_max_score: float = 30  # notify when ghost score is at or below this
     notify_require_salary: bool = False
-    notify_max_per_run: int = 5  # anything beyond this is sent as one summary
+    notify_max_per_run: int = 5  # beyond this -> one summary. 0 = every job its own alert
     notify_delay_seconds: float = 1.0  # pause between alerts (ntfy.sh rate-limits bursts)
+    # Order alerts by any of: distance, score, salary, newest, title, company.
+    # Comma-separate for tie-breaks, e.g. "distance,score".
+    notify_sort: str = "score"
+    # Phones list the newest notification at the top, so send in reverse to make the
+    # list read top-to-bottom in the order above.
+    notify_reverse_send: bool = True
 
     def source_list(self) -> list[str]:
         return [s.strip().lower() for s in self.sources.split(",") if s.strip()]

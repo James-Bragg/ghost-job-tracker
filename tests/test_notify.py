@@ -13,7 +13,9 @@ def setup():
     client = httpx.Client(
         transport=httpx.MockTransport(lambda req: sent.append(req) or httpx.Response(200))
     )
-    settings = Settings(_env_file=None, ntfy_topic="test-topic", notify_max_per_run=2)
+    settings = Settings(
+        _env_file=None, ntfy_topic="test-topic", notify_max_per_run=2, notify_delay_seconds=0
+    )
     return engine, Notifier(settings, client), sent
 
 
@@ -57,7 +59,8 @@ def test_overflow_is_summarised():
         assert notify_genuine(s, notifier) == 5
         # 2 individual + 1 summary
         assert len(sent) == 3
-        assert sent[2].headers["Title"] == "3 more genuine-looking jobs"
+        titles = [r.headers["Title"] for r in sent]
+        assert "3 more genuine-looking jobs" in titles
 
 
 def test_disabled_without_topic():
@@ -92,3 +95,37 @@ def test_same_job_on_two_boards_alerts_once():
         s.commit()
         assert notify_genuine(s, notifier) == 1
         assert len(sent) == 1
+
+
+def test_zero_means_every_job_individually():
+    engine, notifier, sent = setup()
+    notifier.s.notify_max_per_run = 0
+    with get_session(engine) as s:
+        for i in range(8):
+            add(s, i, 5)
+        s.commit()
+        assert notify_genuine(s, notifier) == 8
+        assert len(sent) == 8
+        assert not any("more genuine" in r.headers["Title"] for r in sent)
+
+
+def test_rate_limited_part_way_resumes_next_run():
+    engine = create_engine("sqlite://")
+    init_db(engine)
+    calls = {"n": 0}
+
+    def handler(req):
+        calls["n"] += 1
+        return httpx.Response(429 if calls["n"] == 3 else 200)
+
+    settings = Settings(
+        _env_file=None, ntfy_topic="t", notify_max_per_run=0, notify_delay_seconds=0
+    )
+    notifier = Notifier(settings, httpx.Client(transport=httpx.MockTransport(handler)))
+    with get_session(engine) as s:
+        for i in range(5):
+            add(s, i, 5)
+        s.commit()
+        assert notify_genuine(s, notifier) == 2  # third one was refused
+        assert notify_genuine(s, notifier) == 3  # the rest go next time, none repeated
+        assert calls["n"] == 6

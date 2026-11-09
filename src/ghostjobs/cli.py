@@ -55,6 +55,8 @@ def main() -> None:
     cal.add_argument("--apply", action="store_true", help="Save to weights.json and rescore")
 
     sub.add_parser("notify-test", help="Send a test notification to your phone")
+    nt = sub.add_parser("notify", help="Send genuine jobs to your phone now (no job-board calls)")
+    nt.add_argument("--resend", action="store_true", help="Include jobs you've already been sent")
     sub.add_parser("status", help="Show what's set up and what's stored")
 
     args = parser.parse_args()
@@ -198,6 +200,14 @@ def main() -> None:
             )
             if rows:
                 print(f"Last fetch:    {max(p.last_seen for p in rows):%d %b %Y %H:%M} UTC")
+
+        elif args.cmd == "notify":
+            if args.resend:
+                from sqlmodel import update
+
+                session.exec(update(Posting).values(notified=False))
+                session.commit()
+            print(f"Sent {notify_genuine(session)} job(s), sorted by {s.notify_sort}.")
 
         elif args.cmd == "notify-test":
             n = Notifier()

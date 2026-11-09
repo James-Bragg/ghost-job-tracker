@@ -61,6 +61,14 @@ def is_active(p: Posting, now: datetime | None = None, stale_days: int | None = 
     return ((now or utcnow()) - as_utc(p.last_seen)).days < stale_days
 
 
+class Place(SQLModel, table=True):
+    """Cache of town name -> coordinates, so each place is only looked up once."""
+
+    name: str = Field(primary_key=True)
+    lat: float | None = None
+    lon: float | None = None
+
+
 _engine = None
 
 

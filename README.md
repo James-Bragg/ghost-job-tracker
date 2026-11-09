@@ -76,7 +76,10 @@ Other options (defaults in brackets):
 |---|---|
 | `NOTIFY_MAX_SCORE` (30) | Only notify for jobs scoring at or below this |
 | `NOTIFY_REQUIRE_SALARY` (false) | Only notify for adverts with a real salary |
-| `NOTIFY_MAX_PER_RUN` (5) | Individual alerts per run; the rest arrive as one summary |
+| `NOTIFY_MAX_PER_RUN` (5) | Individual alerts per run; the rest arrive as one summary. `0` = every job as its own alert |
+| `NOTIFY_DELAY_SECONDS` (1) | Pause between alerts, to stay inside ntfy.sh's rate limits |
+| `NOTIFY_SORT` (score) | Alert order: `distance`, `score`, `salary`, `newest`, `title`, `company`. Comma-separate for tie-breaks, e.g. `distance,score` |
+| `NOTIFY_REVERSE_SEND` (true) | Send last-to-first so the phone (newest on top) reads in the order above |
 | `STALE_AFTER_DAYS` (3) | An advert not seen for this long counts as taken down |
 | `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` | Only used if `adzuna` is in `SOURCES` |
 
@@ -145,12 +148,15 @@ journalctl -u ghostjobs -f             # ...and watch it (Ctrl+C to stop)
 
 `notified 0` just means nothing new and genuine turned up since last time.
 
-### Re-sending jobs to your phone
+### Sending / re-sending jobs to your phone
 
 ```bash
-uv run python -c "import sqlite3; c=sqlite3.connect('ghostjobs.db'); c.execute('update posting set notified=0'); c.commit()"
-uv run python -c "from ghostjobs.db import init_db, get_session; from ghostjobs.notify import notify_genuine; init_db(); print(notify_genuine(get_session()), 'sent')"
+uv run ghostjobs notify            # send any genuine jobs not sent yet (no Reed calls)
+uv run ghostjobs notify --resend   # send them all again, in NOTIFY_SORT order
 ```
+
+Distances come from postcodes.io (free, no key). Each town is looked up once and cached,
+and each alert shows it, e.g. `Northampton (19 mi)`.
 
 ### Changing the schedule
 
@@ -235,6 +241,7 @@ uv run ghostjobs top [--genuine] [--irrelevant] [--all] [-n 20]
 uv run ghostjobs check "<job title>"
 uv run ghostjobs label <id> ghosted|responded|rejected
 uv run ghostjobs calibrate [--apply]
+uv run ghostjobs notify [--resend]
 uv run ghostjobs notify-test
 uv run ghostjobs demo [--notify]
 uv run pytest                                  # tests (needs: uv sync)
@@ -256,7 +263,8 @@ src/ghostjobs/
   scoring.py     signals -> score + reasons
   calibrate.py   learn weights from your labels
   pipeline.py    fetch -> store -> score
-  notify.py      ntfy push notifications
+  notify.py      ntfy push notifications + sorting
+  geo.py         distance from home (postcodes.io, cached)
   demo.py        fake data for trying it out
   cli.py         the `ghostjobs` command
 deploy/pi/       systemd service + timer, install.sh
@@ -272,6 +280,7 @@ Built with Python 3.12, httpx, SQLModel/SQLite, pydantic-settings, rapidfuzz, uv
 - [x] Reed integration, relevance filter, phone notifications
 - [x] Runs daily on the Pi
 - [ ] Label 50+ outcomes and run `calibrate --apply`
-- [ ] `ghostjobs notify --resend` command; quieter logs
+- [x] `ghostjobs notify --resend`, sorted alerts with distance
+- [ ] Quieter logs
 - [ ] Second free board (Jooble)
 - [ ] Company context: careers-page check, layoff news

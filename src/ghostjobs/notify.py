@@ -86,38 +86,134 @@ def candidates(session: Session, settings: Settings | None = None) -> list[Posti
     return unique
 
 
-def _job_body(p: Posting) -> str:
+SORT_KEYS = ("distance", "score", "salary", "newest", "title", "company")
+
+
+def _salary_value(p: Posting) -> float | None:
+    if p.salary_predicted:
+        return None
+    return p.salary_max or p.salary_min
+
+
+def sort_postings(
+    rows: list[Posting], order: str, miles: dict[int, float | None] | None = None
+) -> list[Posting]:
+    """Sort by NOTIFY_SORT, e.g. "distance,score". Unknown values are missing go last."""
+    miles = miles or {}
+    big = float("inf")
+
+    def part(p: Posting, key: str):
+        if key == "distance":
+            d = miles.get(p.id)
+            return d if d is not None else big
+        if key == "score":
+            return p.ghost_score if p.ghost_score is not None else big
+        if key == "salary":  # highest first
+            v = _salary_value(p)
+            return -v if v else big
+        if key == "newest":
+            return -(p.posted_at or p.first_seen).timestamp()
+        if key == "title":
+            return p.title.strip().lower()
+        if key == "company":
+            return p.company.strip().lower()
+        return 0
+
+    keys = [k.strip().lower() for k in order.split(",") if k.strip()]
+    for k in keys:
+        if k not in SORT_KEYS:
+            log.warning("Unknown NOTIFY_SORT value %r (options: %s)", k, ", ".join(SORT_KEYS))
+    keys = [k for k in keys if k in SORT_KEYS] or ["score"]
+    return sorted(rows, key=lambda p: tuple(part(p, k) for k in keys))
+
+
+def _job_body(p: Posting, miles: float | None = None) -> str:
     reasons = json.loads(p.reasons or "[]")
-    body = f"{p.company} · {p.location}\n{_salary(p)}\nGhost score {p.ghost_score:.0f}/100 · #{p.id}"
+    where = p.location + (f" ({miles:.0f} mi)" if miles is not None else "")
+    body = f"{p.company} · {where}\n{_salary(p)}\nGhost score {p.ghost_score:.0f}/100 · #{p.id}"
     if reasons:
         body += f"\nNote: {reasons[0]}"
     return body
 
 
-def notify_genuine(session: Session, notifier: Notifier | None = None) -> int:
-    """NOTIFY_MAX_PER_RUN=0 sends every job as its own alert. Jobs are marked sent only
-    after their alert goes through, so a rate limit part-way just defers the rest."""
+def _distances(session: Session, rows: list[Posting]) -> dict[int, float | None]:
+    from ghostjobs.geo import Geocoder
+
+    geo = Geocoder(session)
+    return {p.id: geo.miles_from_home(p.location) for p in rows}
+
+
+def notify_genuine(
+    session: Session,
+    notifier: Notifier | None = None,
+    distances: dict[int, float | None] | None = None,
+) -> int:
+    """Send a push for each new genuine-looking posting. Returns how many were sent/covered.
+
+    NOTIFY_MAX_PER_RUN=0 sends every job as its own alert. Alerts are ordered by NOTIFY_SORT.
+    Each job is marked as sent only after its alert goes through, so if ntfy rate-limits us
+    part-way, the rest simply go out on the next run instead of being lost.
+    """
     notifier = notifier or Notifier()
     if not notifier.enabled:
         return 0
     rows = candidates(session, notifier.s)
     if not rows:
-        session.commit()
+        session.commit()  # keep any cross-board duplicates marked by candidates()
         return 0
 
-    limit = notifier.s.notify_max_per_run
+    s = notifier.s
+    miles = distances if distances is not None else _distances(session, rows)
+    rows = sort_postings(rows, s.notify_sort, miles)
+
+    limit = s.notify_max_per_run
     individual = rows if limit <= 0 else rows[:limit]
     extra = [] if limit <= 0 else rows[limit:]
-    delay = notifier.s.notify_delay_seconds
     covered = 0
 
-    for i, p in enumerate(individual):
-        if i and delay:
-            time.sleep(delay)
+    def send_summary() -> bool:
+        nonlocal covered
+        if not extra:
+            return True
+        lines = "\n".join(f"• #{p.id} {p.title} @ {p.company}" for p in extra[:15])
+        more = f"\n…and {len(extra) - 15} more" if len(extra) > 15 else ""
         try:
-            notifier.send(title=p.title, message=_job_body(p), click=p.url, tags="white_check_mark")
+            notifier.send(
+                title=f"{len(extra)} more genuine-looking jobs",
+                message=lines + more,
+                tags="clipboard",
+                priority="low",
+            )
         except httpx.HTTPError as e:
-            log.warning("Stopped after %d alerts - ntfy refused: %s. The rest go next run.", covered, e)
+            log.warning("Summary alert failed: %s. Those jobs go next run.", e)
+            return False
+        for p in extra:
+            p.notified = True
+            session.add(p)
+        session.commit()
+        covered += len(extra)
+        return True
+
+    # Phones show the newest alert at the top. Sending in reverse (summary first, then the
+    # last job ... the first job) makes the list read top-to-bottom in sorted order.
+    if s.notify_reverse_send:
+        send_summary()
+        individual = list(reversed(individual))
+
+    for i, p in enumerate(individual):
+        if i and s.notify_delay_seconds:
+            time.sleep(s.notify_delay_seconds)  # be gentle with ntfy.sh's rate limits
+        try:
+            notifier.send(
+                title=p.title,
+                message=_job_body(p, miles.get(p.id)),
+                click=p.url,
+                tags="white_check_mark",
+            )
+        except httpx.HTTPError as e:
+            log.warning(
+                "Stopped after %d alerts - ntfy refused: %s. The rest go next run.", covered, e
+            )
             session.commit()
             return covered
         p.notified = True
@@ -125,19 +221,6 @@ def notify_genuine(session: Session, notifier: Notifier | None = None) -> int:
         session.commit()
         covered += 1
 
-    if extra:
-        lines = "\n".join(f"• #{p.id} {p.title} @ {p.company}" for p in extra[:15])
-        more = f"\n…and {len(extra) - 15} more" if len(extra) > 15 else ""
-        try:
-            notifier.send(title=f"{len(extra)} more genuine-looking jobs",
-                          message=lines + more, tags="clipboard", priority="low")
-        except httpx.HTTPError as e:
-            log.warning("Summary alert failed: %s. Those jobs go next run.", e)
-            return covered
-        for p in extra:
-            p.notified = True
-            session.add(p)
-        session.commit()
-        covered += len(extra)
-
+    if not s.notify_reverse_send:
+        send_summary()
     return covered
