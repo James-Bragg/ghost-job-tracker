@@ -1,0 +1,15 @@
+[Unit]
+Description=Ghost Job Tracker - listen for commands from your phone
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=__USER__
+WorkingDirectory=__DIR__
+ExecStart=__UV__ run --no-sync ghostjobs listen
+Restart=always
+RestartSec=30
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

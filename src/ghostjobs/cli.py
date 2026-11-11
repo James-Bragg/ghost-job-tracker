@@ -59,6 +59,25 @@ def main() -> None:
     nt.add_argument("--resend", action="store_true", help="Include jobs you've already been sent")
     sub.add_parser("status", help="Show what's set up and what's stored")
 
+    sk = sub.add_parser("skills", help="Which skills/tools local relevant jobs ask for")
+    sk.add_argument("--days", type=int, default=30, help="Look back this many days (0 = all)")
+    sk.add_argument(
+        "--role",
+        choices=[
+            "development",
+            "support",
+            "data",
+            "testing",
+            "infrastructure",
+            "security",
+            "other",
+        ],
+        help="Only this kind of role",
+    )
+    sk.add_argument("-n", type=int, default=15, help="How many skills to list")
+
+    sub.add_parser("listen", help="Listen for phone commands (run by the listener service)")
+
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
@@ -86,11 +105,27 @@ def main() -> None:
             return
 
         if args.cmd == "run":
-            result = run_all(session, args.location, args.pages)
+            from ghostjobs.listener import run_lock
+
+            with run_lock() as got_it:
+                if not got_it:
+                    print("Another run is already running - skipping this one.")
+                    return
+                result = run_all(session, args.location, args.pages)
             print(
                 f"Fetched {result['fetched']}, scored {result['scored']}, "
                 f"notified {result['notified']}."
             )
+
+        elif args.cmd == "skills":
+            from ghostjobs.skills import format_report, report
+
+            print(format_report(report(session, args.days, args.role), top=args.n))
+
+        elif args.cmd == "listen":
+            from ghostjobs.listener import listen
+
+            listen()
 
         elif args.cmd == "demo":
             from ghostjobs.demo import seed

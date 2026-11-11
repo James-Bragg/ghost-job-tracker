@@ -79,6 +79,8 @@ Other options (defaults in brackets):
 | `NOTIFY_MAX_PER_RUN` (5) | Individual alerts per run; the rest arrive as one summary. `0` = every job as its own alert |
 | `NOTIFY_DELAY_SECONDS` (1) | Pause between alerts, to stay inside ntfy.sh's rate limits |
 | `NOTIFY_SORT` (score) | Alert order: `distance`, `score`, `salary`, `newest`, `title`, `company`. Comma-separate for tie-breaks, e.g. `distance,score` |
+| `NTFY_COMMAND_TOPIC` (blank) | Second topic for phone commands - see "Control it from your phone" |
+| `COMMAND_COOLDOWN_MINUTES` (30) | Minimum gap between phone-triggered full runs |
 | `NOTIFY_REVERSE_SEND` (true) | Send last-to-first so the phone (newest on top) reads in the order above |
 | `STALE_AFTER_DAYS` (3) | An advert not seen for this long counts as taken down |
 | `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` | Only used if `adzuna` is in `SOURCES` |
@@ -182,6 +184,65 @@ re-run `bash deploy/pi/install.sh`.
 
 ---
 
+## Control it from your phone
+
+A small listener service on the Pi watches a **second** ntfy topic for commands.
+
+1. Make up another long random topic, e.g. `job-commands-jb-4n7q2w9z` (different from
+   `NTFY_TOPIC`), and put it in `.env` as `NTFY_COMMAND_TOPIC`.
+2. Re-run `bash deploy/pi/install.sh` (installs and starts `ghostjobs-listener`).
+3. In the ntfy app, subscribe to the command topic too, open it, and send `help`.
+
+| Send | What happens |
+|---|---|
+| `run` | Full run now: fetch from Reed, score, alert you. Limited to once per `COMMAND_COOLDOWN_MINUTES` (30) to protect your Reed quota |
+| `send` | Send genuine jobs you haven't had yet (no Reed calls) |
+| `resend` | Send all current genuine jobs again |
+| `skills` | Skills local jobs are asking for (see below) |
+| `status` | What's set up and stored |
+| `help` | The list of commands |
+
+Every reply arrives on your normal alerts topic with **Run now / Send new / Skills**
+buttons, so after the first time you can just tap. Phone runs and the 18:00 run share a
+lock, so they can never run at the same time.
+
+```bash
+systemctl status ghostjobs-listener       # is it running?
+journalctl -u ghostjobs-listener -f       # watch commands arrive
+```
+
+If you change `.env`, run `sudo systemctl restart ghostjobs-listener`.
+
+---
+
+## What skills are local jobs asking for?
+
+Every advert is scanned for the skills, tools and certifications in `skills.toml`
+(languages, frameworks, cloud, IT-support tools, testing, security, certs like CompTIA A+ /
+AZ-900, even "driving licence"). The report counts them across the **relevant** jobs you've
+seen, so it reflects jobs you'd actually apply for:
+
+```bash
+uv run ghostjobs skills                   # last 30 days, overall + per kind of role
+uv run ghostjobs skills --role support    # development / support / data / testing / ...
+uv run ghostjobs skills --days 0 -n 25    # all time, top 25
+```
+
+```
+Skills asked for in 143 relevant jobs (last 30 days)
+ 48%  Microsoft 365
+ 41%  SQL
+ ...
+Support (61 jobs): Microsoft 365 72%, Active Directory 54%, Networking basics 49%, ...
+Development (38 jobs): Git 55%, C# 42%, .NET 40%, SQL 39%, ...
+```
+
+Add anything you want tracked to `skills.toml`, then `uv run ghostjobs score` to recount
+everything stored. Full adverts give the best counts; jobs only seen as a short preview are
+counted from that preview.
+
+---
+
 ## Try it without API keys
 
 ```bash
@@ -236,6 +297,8 @@ others still get through. In the logs: `401`/`403` = check the key, `429` = too 
 ```bash
 uv run ghostjobs run                           # what the schedule runs: fetch -> score -> notify
 uv run ghostjobs status
+uv run ghostjobs skills [--days 30] [--role support] [-n 15]
+uv run ghostjobs listen                        # the phone-command listener (systemd runs it)
 uv run ghostjobs fetch -k "junior developer"   # one search, no notifications
 uv run ghostjobs top [--genuine] [--irrelevant] [--all] [-n 20]
 uv run ghostjobs check "<job title>"
@@ -254,6 +317,7 @@ uv run pytest                                  # tests (needs: uv sync)
 ```
 .env.example     settings template (copy to .env - never commit .env)
 relevance.toml   which jobs are relevant to you
+skills.toml      skills / tools / certs to count
 src/ghostjobs/
   config.py      settings from .env
   db.py          SQLite Posting table (+ tiny auto-migration)
@@ -265,9 +329,11 @@ src/ghostjobs/
   pipeline.py    fetch -> store -> score
   notify.py      ntfy push notifications + sorting
   geo.py         distance from home (postcodes.io, cached)
+  skills.py      skills extraction + report
+  listener.py    phone commands over ntfy
   demo.py        fake data for trying it out
   cli.py         the `ghostjobs` command
-deploy/pi/       systemd service + timer, install.sh
+deploy/pi/       systemd service, timer, listener, install.sh
 tests/
 ```
 
@@ -281,6 +347,8 @@ Built with Python 3.12, httpx, SQLModel/SQLite, pydantic-settings, rapidfuzz, uv
 - [x] Runs daily on the Pi
 - [ ] Label 50+ outcomes and run `calibrate --apply`
 - [x] `ghostjobs notify --resend`, sorted alerts with distance
-- [ ] Quieter logs
+- [x] Phone commands (run / send / skills / status)
+- [x] Skills-in-demand report
+- [ ] Weekly skills digest to phone; quieter logs
 - [ ] Second free board (Jooble)
 - [ ] Company context: careers-page check, layoff news

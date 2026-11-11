@@ -12,6 +12,7 @@ from ghostjobs.fetchers import AdzunaFetcher, Fetcher, RawPosting, ReedFetcher
 from ghostjobs.relevance import check, check_title, load_rules
 from ghostjobs.scoring import load_weights, score
 from ghostjobs.signals import compute_signals
+from ghostjobs.skills import extract, load_skills
 
 log = logging.getLogger(__name__)
 
@@ -114,8 +115,10 @@ def rescore_all(session: Session) -> int:
     postings = list(session.exec(select(Posting)).all())
     weights = load_weights()
     rules = load_rules()
+    skill_defs = load_skills()
     for p in postings:
         p.relevant, p.irrelevant_reason = check(p, rules)
+        p.skills = json.dumps(extract(f"{p.title}\n{p.description}", skill_defs))
         value, reasons = score(compute_signals(p, postings), weights)
         p.ghost_score = value
         p.reasons = json.dumps(reasons)

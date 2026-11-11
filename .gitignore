@@ -6,3 +6,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 dist/
+
+ghostjobs.lock
+.listener_state.json

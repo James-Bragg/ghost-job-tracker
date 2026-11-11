@@ -48,6 +48,8 @@ class Posting(SQLModel, table=True):
     relevant: bool = True  # matches your relevance.toml
     irrelevant_reason: str = ""
 
+    skills: str = ""  # JSON list of skills.toml names found in the advert
+
 
 def as_utc(d: datetime) -> datetime:
     """Older DBs / drivers may hand back naive datetimes; treat those as UTC."""
@@ -86,6 +88,7 @@ _ADDED_COLUMNS = [
     ("salary_predicted", "BOOLEAN NOT NULL DEFAULT 0"),
     ("relevant", "BOOLEAN NOT NULL DEFAULT 1"),
     ("irrelevant_reason", "VARCHAR NOT NULL DEFAULT ''"),
+    ("skills", "VARCHAR NOT NULL DEFAULT ''"),
 ]
 
 

@@ -42,11 +42,16 @@ render() {
 }
 render deploy/pi/ghostjobs.service | sudo tee /etc/systemd/system/ghostjobs.service >/dev/null
 sudo cp deploy/pi/ghostjobs.timer /etc/systemd/system/ghostjobs.timer
+render deploy/pi/ghostjobs-listener.service \
+    | sudo tee /etc/systemd/system/ghostjobs-listener.service >/dev/null
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now ghostjobs.timer
+sudo systemctl enable ghostjobs-listener.service
+sudo systemctl restart ghostjobs-listener.service   # picks up .env changes
 
 echo
 echo "Done. Next runs:"
 systemctl list-timers ghostjobs.timer --no-pager
 echo "Logs:      journalctl -u ghostjobs -e"
+echo "Phone commands: journalctl -u ghostjobs-listener -e  (needs NTFY_COMMAND_TOPIC in .env)"

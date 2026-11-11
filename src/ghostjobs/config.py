@@ -31,6 +31,14 @@ class Settings(BaseSettings):
     weights_path: str = "weights.json"
     # Which jobs are worth notifying you about.
     relevance_path: str = "relevance.toml"
+    # Skills / tools / certs to count in adverts.
+    skills_path: str = "skills.toml"
+
+    # Phone commands: a SECOND ntfy topic the Pi listens on. Send "run", "skills", "help"...
+    # from the ntfy app. Leave blank to turn off. Make it long and random too.
+    ntfy_command_topic: str = ""
+    # Minimum minutes between phone-triggered full runs (protects your Reed quota).
+    command_cooldown_minutes: int = 30
 
     # Searches run by `ghostjobs run`, separated by ";". Falls back to default_keywords.
     searches: str = ""

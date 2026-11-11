@@ -32,10 +32,13 @@ class Notifier:
         click: str = "",
         tags: str = "briefcase",
         priority: str = "default",
+        actions: str = "",
     ) -> None:
         headers = {"Title": title, "Tags": tags, "Priority": priority}
         if click:
             headers["Click"] = click
+        if actions:
+            headers["Actions"] = actions
         if self.s.ntfy_token:
             headers["Authorization"] = f"Bearer {self.s.ntfy_token}"
         # Header values must be latin-1; strip anything else (e.g. emoji in job titles).
